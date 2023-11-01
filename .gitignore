@@ -1,2 +1,4 @@
 .DS_Store
 data/*
+!data/put_raw_dataset_here.txt
+.env
