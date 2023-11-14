@@ -7,6 +7,10 @@ recommendation_agent = RAG()
 with st.sidebar:
     "## CS4480 Group Project"
     "[View the source code](https://github.com/Jonathandika/llm-recommender-system)"
+    "Authors: "
+    "Jonathan Andika"
+    "Seivabel Jessica"
+    "Ryan Gani"
 
 st.title("💬 Chatbot")
 st.caption("🚀 LLM Recommender System Chatbot")
@@ -25,8 +29,10 @@ if prompt := st.chat_input():
     st.chat_message("user").write(prompt)
 
     response = recommendation_agent.agent(prompt)
+    print("REPONSE ===>", response)
+    print("KEYS ===>", response.keys())
     
-    msg = {"role": "assistant", "content": response.generated_text}
+    msg = {"role": "assistant", "content": response["output"]}
 
     st.session_state.messages.append(msg)
     st.chat_message("assistant").write(msg["content"])
