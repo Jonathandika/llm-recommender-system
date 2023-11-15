@@ -3,5 +3,6 @@ data/*
 !data/put_raw_dataset_here.txt
 .env
 .env.sh
+modules/__pycache__/
 modules/helper/__pycache__/
 backup/

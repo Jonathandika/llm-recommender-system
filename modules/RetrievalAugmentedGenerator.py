@@ -15,8 +15,8 @@ from langchain.schema.runnable import RunnableBranch
 from langchain.agents import Tool
 from langchain.agents import initialize_agent
 
-from helper.PineconeModified import PineconeModified
-from helper.PineconeSelfQueryRetriever import PineconeSelfQueryRetriever
+from modules.helper.PineconeModified import PineconeModified
+from modules.helper.PineconeSelfQueryRetriever import PineconeSelfQueryRetriever
 
 import os
 
@@ -101,6 +101,9 @@ class RAG:
         def format_docs(docs):
             return "\n\n".join([d.page_content for d in docs])
         
+        def format_docs_title(docs):
+            return "\n\n".join([f"{i+1}. {d.metadata['title']} : {d.page_content}" for i,d in enumerate(docs)])
+        
         ## 1. Generic Recommendation
 
         generic_qa = RetrievalQA.from_chain_type(
@@ -119,31 +122,14 @@ class RAG:
         popular_qa = pinecone_retriever | format_docs
 
         ## 3. Specific Recommendation
-        recommended_qa = RetrievalQA.from_chain_type(
-            llm=self.llm,
-            chain_type="map_rerank",
-            retriever=self.vectorstore.as_retriever(
-                search_kwargs={'k' : 10, 
-                            'filter': {'user_id' : self.user_id, 'category': 'recommended'}})
-        )
+        pineconeRetreiver = self.vectorstore.as_retriever(
+                search_kwargs={'k' : 5, 
+                            'filter': {'user_id' : '1', 'category': 'recommended'}})
 
-        # If yes
-        recommended_chain = (
-            {"recommended_books" : RunnablePassthrough()}
-            | PromptTemplate.from_template(
-                """
-                You are an expert in recommended books. \
-                Give the user book recommendation books using below information. \
-                Always start with "I have some books recommendation that is tailored to your taste. \
-                
-                Recommended Books: 
-                {recommended_books}
-                """
-            )
-            | self.llm
-        )
+        recommended_qa = pineconeRetreiver | format_docs_title
 
-        # If no
+        recommended_qa.invoke("history books")
+
         popular_chain = (
             {"recommended_books": popular_qa, "question": RunnablePassthrough()}
             | PromptTemplate.from_template(
@@ -178,7 +164,7 @@ class RAG:
                 "query": RunnablePassthrough()
             }
             | RunnableBranch(
-                (lambda x: "yes" in x["topic"].lower() or "Yes" in x["topic"].lower(), (lambda x :  x['query']) | recommended_qa | recommended_chain),
+                (lambda x: "yes" in x["topic"].lower() or "Yes" in x["topic"].lower(), (lambda x :  x['query']) | recommended_qa),
                 (lambda x: "no" in x["topic"].lower() or "No" in x["topic"].lower(), (lambda x :  x['query']) | popular_chain),
                 (lambda x :  x['query']) | popular_chain
                 )

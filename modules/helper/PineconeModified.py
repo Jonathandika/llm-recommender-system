@@ -1,7 +1,7 @@
 from langchain.vectorstores import Pinecone
 from langchain.schema.vectorstore import VectorStoreRetriever
 
-from helper.PineconeVectorStoreRetriever import PineconeVectorStoreRetriever
+from modules.helper.PineconeVectorStoreRetriever import PineconeVectorStoreRetriever
 
 from typing import Any
 

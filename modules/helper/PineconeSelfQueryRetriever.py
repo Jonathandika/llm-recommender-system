@@ -6,7 +6,7 @@ from langchain.schema.language_model import BaseLanguageModel
 from langchain.retrievers.self_query.pinecone import PineconeTranslator
 from langchain.chains.query_constructor.base import load_query_constructor_runnable
 
-from helper.PineconeModified import PineconeModified
+from modules.helper.PineconeModified import PineconeModified
 
 from typing import Any, Dict, Optional, Sequence, Type, Union
 
