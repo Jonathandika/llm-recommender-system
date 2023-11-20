@@ -46,32 +46,32 @@ class RecommendationSystem():
         book_df = pd.read_parquet('data/book_eng.parquet')
         book_df_cleaned = book_df.dropna(subset = ['Description'])
         book_df_cleaned.reset_index(drop = True, inplace = True)
-        sample_book_cleaned = book_df_cleaned.sample(10000, random_state=42) #delete
+        self.book_df = book_df_cleaned.sample(1000, random_state=42) #delete
+        ddata = dd.from_pandas(self.book_df[['Id', 'Description', 'Name']], npartitions=8)
 
         user_rating_df = pd.read_parquet('data/user_rating_total.parquet')
         user_rating_df_cleaned = user_rating_df.drop_duplicates()
         user_rating_df_cleaned.dropna(inplace=True)
         user_rating_df_cleaned.reset_index(drop = True, inplace = True)
         
-        return sample_book_cleaned, user_rating_df_cleaned
+        return ddata, user_rating_df_cleaned
 
     @timeit
-    def generate_embeddings(self, df, item, **kwargs):
-        if item == 'Description':
-            ddata = dd.from_pandas(df[['Id', 'Description']], npartitions=8)
-            ddata['Embeddings'] = ddata['Description'].apply(self.embed_text, meta = ('Description', 'object'))
-        else:
-            ddata = dd.from_pandas(df[['Id', 'Name']], npartitions=8)
-            ddata['Embeddings'] = ddata['Name'].apply(self.embed_text, meta = ('Name', 'object'))
+    def generate_embeddings(self, ddata, **kwargs):
+        ddata['EmbeddingsDesc'] = ddata['Description'].apply(self.embed_text, meta = ('Description', 'object'))
+        ddata['EmbeddingsTitle'] = ddata['Name'].apply(self.embed_text, meta = ('Name', 'object'))
 
         print('======= Computing =======')
         embeddings = ddata.compute()
         print('======= Computing Done =======')
-        embeddings_df = pd.DataFrame(embeddings['Embeddings'].tolist())
-        embeddings_df.columns = [str(x) for x in range(embeddings_df.shape[1])]
-        embeddings_df.insert(0, 'Id', embeddings['Id'].tolist())
+        embeddings_desc_df = pd.DataFrame(embeddings['EmbeddingsDesc'].tolist())
+        embeddings_title_df = pd.DataFrame(embeddings['EmbeddingsTitle'].tolist())
+
+        for embeddings_df in [embeddings_desc_df, embeddings_title_df]:
+            embeddings_df.columns = [str(x) for x in range(embeddings_df.shape[1])]
+            embeddings_df.insert(0, 'Id', embeddings['Id'].tolist())
         
-        return embeddings_df
+        return embeddings_desc_df, embeddings_title_df
 
     @timeit
     def compute_similarity(self, embeddings, **kwargs):
@@ -95,10 +95,10 @@ class RecommendationSystem():
         return user_item_matrix
 
     # @timeit
-    def get_book_details(self, book_df, book_id):
+    def get_book_details(self, book_id):
         """Worker function to get book details."""
-        title = book_df[book_df['Id'] == int(book_id)]['Name'].values[0]
-        description = book_df[book_df['Id'] == int(book_id)]['Description'].values[0]
+        title = self.book_df[self.book_df['Id'] == int(book_id)]['Name'].values[0]
+        description = self.book_df[self.book_df['Id'] == int(book_id)]['Description'].values[0]
         return book_id, title, description
 
     @timeit
@@ -107,7 +107,6 @@ class RecommendationSystem():
 
         # Convert pandas DataFrames to Dask DataFrames
         dask_filled_matrix = dd.from_pandas(filled_matrix, npartitions=8)
-        dask_book_df = dd.from_pandas(book_df, npartitions=8)
 
         # Function to get the top books
         def get_top_books(df):
@@ -124,7 +123,7 @@ class RecommendationSystem():
         long_format['book_id'] = long_format['book_id'].astype(int)
 
         # Merge with dask_book_df
-        merged_df = dd.merge(long_format, dask_book_df, left_on='book_id', right_on='Id')
+        merged_df = dd.merge(long_format, book_df, left_on='book_id', right_on='Id')
 
         # Compute the final result
         final_df = merged_df.compute()[['user_id', 'book_id', 'Name', 'Description']]
@@ -137,16 +136,11 @@ class RecommendationSystem():
     def generate_recommendations(self):
         #1. Load data
         print('======= Loading Data =======')
-        book_df, user_rating_df = self.load_data()
+        book_ddata, user_rating_df = self.load_data()
 
         #2. Generate embeddings -- Description
         print('======= Generating Embeddings =======')
-        print('======= Description =======')
-        embeddings_desc_df = self.generate_embeddings(book_df, 'Description', name="description")
-
-        #3. Generate embeddings -- Title
-        print('======= Title =======')
-        embeddings_title_df = self.generate_embeddings(book_df, 'Title', name="title")
+        embeddings_desc_df, embeddings_title_df = self.generate_embeddings(book_ddata)
 
         #4. Item similarity -- item x item matrix
         # Description
@@ -176,7 +170,7 @@ class RecommendationSystem():
         filled_matrix = pr.fill_user_item_matrix_parallel(user_item_matrix, final_similarity_matrix, num_processes=4)
        
         #7. Generate Top K Recommendations
-        recommendations = self.get_top_k_recommendations(10, filled_matrix, book_df)
+        recommendations = self.get_top_k_recommendations(10, filled_matrix, book_ddata)
         
         recommendations.to_parquet(f'output/top_k_recommendations_nonparallel_{current_time}.parquet')
 
