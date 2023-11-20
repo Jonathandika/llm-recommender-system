@@ -66,6 +66,10 @@ class RecommendationSystem():
         print('======= Computing Done =======')
         embeddings_desc_df = pd.DataFrame(embeddings['EmbeddingsDesc'].tolist())
         embeddings_title_df = pd.DataFrame(embeddings['EmbeddingsTitle'].tolist())
+
+        for embeddings_df in [embeddings_desc_df, embeddings_title_df]:
+            embeddings_df.columns = [str(x) for x in range(embeddings_df.shape[1])]
+            embeddings_df.insert(0, 'Id', embeddings['Id'].tolist())
         
         return embeddings_desc_df, embeddings_title_df
 
