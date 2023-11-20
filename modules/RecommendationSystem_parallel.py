@@ -4,7 +4,7 @@ from dotenv import dotenv_values
 import dask.dataframe as dd
 from dask.multiprocessing import get
 from FlagEmbedding import FlagModel
-from modules.helper.PredictRating import PredictRating
+from helper.PredictRating import PredictRating
 from functools import wraps
 import time
 import csv
@@ -46,7 +46,7 @@ class RecommendationSystem():
         book_df = pd.read_parquet('data/book_eng.parquet')
         book_df_cleaned = book_df.dropna(subset = ['Description'])
         book_df_cleaned.reset_index(drop = True, inplace = True)
-        sample_book_cleaned = book_df_cleaned.sample(100, random_state=42) #delete
+        sample_book_cleaned = book_df_cleaned.sample(1000, random_state=42) #delete
 
         user_rating_df = pd.read_parquet('data/user_rating_total.parquet')
         user_rating_df_cleaned = user_rating_df.drop_duplicates()
@@ -104,26 +104,34 @@ class RecommendationSystem():
     @timeit
     def get_top_k_recommendations(self, k, filled_matrix, book_df):
         print(f'======= Getting Top {k} Recommendations =======')
-        # Prepare the data structure for storing results
-        results = []
 
-        # Using ThreadPoolExecutor to parallelize the task
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            # Create a list of futures
-            future_to_user = {executor.submit(self.get_book_details, book_df, book_id): user_id 
-                            for user_id in filled_matrix.index 
-                            for book_id in filled_matrix.T[user_id].sort_values(ascending=False)[:10].index.tolist()}
-            
-            # Collecting results as they complete
-            for future in concurrent.futures.as_completed(future_to_user):
-                user_id = future_to_user[future]
-                try:
-                    book_id, title, description = future.result()
-                    results.append({'user_id': user_id, 'book_id': book_id, 'book_title': title, 'description': description})
-                except Exception as exc:
-                    print(f'{user_id} generated an exception: {exc}')
+        # Convert pandas DataFrames to Dask DataFrames
+        dask_filled_matrix = dd.from_pandas(filled_matrix, npartitions=8)
+        dask_book_df = dd.from_pandas(book_df, npartitions=8)
 
-        return pd.DataFrame(results)
+        # Function to get the top books
+        def get_top_books(df):
+            return df.apply(lambda x: x.sort_values(ascending=False).head(k))
+
+        # Apply the function to each partition
+        top_books = dask_filled_matrix.map_partitions(get_top_books)
+
+        # Compute and format the result
+        long_format = top_books.compute().stack().reset_index()
+        long_format.columns = ['book_id', 'user_id', 'score']
+
+        # Ensure the data types are consistent for merging
+        long_format['book_id'] = long_format['book_id'].astype(int)
+
+        # Merge with dask_book_df
+        merged_df = dd.merge(long_format, dask_book_df, left_on='book_id', right_on='Id')
+
+        # Compute the final result
+        final_df = merged_df.compute()[['user_id', 'book_id', 'Name', 'Description']]
+        final_df.columns = ['user_id', 'book_id', 'book_title', 'description']
+
+        return final_df
+
 
     @timeit
     def generate_recommendations(self):
@@ -230,6 +238,6 @@ if __name__ == '__main__':
     rs = RecommendationSystem()
     data = rs.generate_recommendations()
     # data = pd.read_parquet('data/top_k_recommendations_parallel.parquet')
-    rs.index_embedding_vectors(data)
+    # rs.index_embedding_vectors(data)
     
 file_handler.close()
