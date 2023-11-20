@@ -56,22 +56,18 @@ class RecommendationSystem():
         return sample_book_cleaned, user_rating_df_cleaned
 
     @timeit
-    def generate_embeddings(self, df, item, **kwargs):
-        if item == 'Description':
-            ddata = dd.from_pandas(df[['Id', 'Description']], npartitions=30)
-            ddata['Embeddings'] = ddata['Description'].apply(self.embed_text, meta = ('Description', 'object'))
-        else:
-            ddata = dd.from_pandas(df[['Id', 'Name']], npartitions=30)
-            ddata['Embeddings'] = ddata['Name'].apply(self.embed_text, meta = ('Name', 'object'))
+    def generate_embeddings(self, df, **kwargs):
+        ddata = dd.from_pandas(df[['Id', 'Name', 'Description']], npartitions=8)
+        ddata['EmbeddingsDesc'] = ddata['Description'].apply(self.embed_text, meta = ('Description', 'object'))
+        ddata['EmbeddingsTitle'] = ddata['Name'].apply(self.embed_text, meta = ('Name', 'object'))
 
         print('======= Computing =======')
         embeddings = ddata.compute()
         print('======= Computing Done =======')
-        embeddings_df = pd.DataFrame(embeddings['Embeddings'].tolist())
-        embeddings_df.columns = [str(x) for x in range(embeddings_df.shape[1])]
-        embeddings_df.insert(0, 'Id', embeddings['Id'].tolist())
+        embeddings_desc_df = pd.DataFrame(embeddings['EmbeddingsDesc'].tolist())
+        embeddings_title_df = pd.DataFrame(embeddings['EmbeddingsTitle'].tolist())
         
-        return embeddings_df
+        return embeddings_desc_df, embeddings_title_df
 
     @timeit
     def compute_similarity(self, embeddings, **kwargs):
@@ -142,13 +138,10 @@ class RecommendationSystem():
         #2. Generate embeddings -- Description
         print('======= Generating Embeddings =======')
         print('======= Description =======')
-        embeddings_desc_df = self.generate_embeddings(book_df, 'Description', name="description")
 
-        #3. Generate embeddings -- Title
-        print('======= Title =======')
-        embeddings_title_df = self.generate_embeddings(book_df, 'Title', name="title")
+        embeddings_desc_df, embeddings_title_df = self.generate_embeddings(book_df)
 
-        #4. Item similarity -- item x item matrix
+        #3. Item similarity -- item x item matrix
         # Description
         print('======= Generating item similarity -- Desc =======')
         similarity_matrix_desc = self.compute_similarity(embeddings_desc_df, name="description")
@@ -157,7 +150,7 @@ class RecommendationSystem():
         print('======= Generating item similarity -- Title =======')
         similarity_matrix_title = self.compute_similarity(embeddings_title_df, name="title")
 
-        # Final Item Similarity Matrix
+        # 4. Final Item Similarity Matrix
         print('======= Generating final item similarity =======')
         final_similarity_matrix = 0.4*similarity_matrix_title + 0.6*similarity_matrix_desc
         final_similarity_matrix.columns = embeddings_title_df['Id'].tolist()
