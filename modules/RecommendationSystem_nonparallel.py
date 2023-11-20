@@ -4,7 +4,7 @@ from dotenv import dotenv_values
 import dask.dataframe as dd
 from dask.multiprocessing import get
 from FlagEmbedding import FlagModel
-from modules.helper.PredictRating import PredictRating
+from helper.PredictRating import PredictRating
 from functools import wraps
 import time
 import csv
@@ -40,7 +40,7 @@ class RecommendationSystem():
         book_df = pd.read_parquet('data/book_eng.parquet')
         book_df_cleaned = book_df.dropna(subset = ['Description'])
         book_df_cleaned.reset_index(drop = True, inplace = True)
-        sample_book_cleaned = book_df_cleaned.sample(100, random_state=42) #delete
+        sample_book_cleaned = book_df_cleaned.sample(1000, random_state=42) #delete
 
         user_rating_df = pd.read_parquet('data/user_rating_total.parquet')
         user_rating_df_cleaned = user_rating_df.drop_duplicates()
@@ -79,7 +79,7 @@ class RecommendationSystem():
         user_rating_with_existing_books = user_rating_df[user_rating_df['book_id'].isin(existing_books)]
         user_rating_with_existing_books.ID = user_rating_with_existing_books.ID.astype('str')
 
-        df_aggregated = user_rating_with_existing_books.groupby(['ID', 'book_id']).mean().reset_index()
+        df_aggregated = user_rating_with_existing_books.groupby(['ID', 'book_id'])[['Rating']].mean().reset_index()
         user_item_matrix = df_aggregated.pivot(index='ID', columns='book_id', values='Rating').fillna(0)
 
         return user_item_matrix
