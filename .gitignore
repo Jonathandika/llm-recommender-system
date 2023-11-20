@@ -6,3 +6,5 @@ data/*
 modules/__pycache__/
 modules/helper/__pycache__/
 backup/
+output/*
+!data/output.txt

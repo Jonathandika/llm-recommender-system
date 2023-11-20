@@ -9,7 +9,8 @@ from functools import wraps
 import time
 import csv
 
-file_handler = open('data/function_timings_benchmark.txt', 'w')
+current_time = time.strftime("%Y%m%d-%H%M%S")
+file_handler = open(f'output/function_timings_nonparallel_{current_time}.txt', 'w')
 
 def timeit(func):
     @wraps(func)
@@ -151,7 +152,7 @@ class RecommendationSystem():
         #7. Generate Top K Recommendations
         recommendations = self.get_top_k_recommendations(10, filled_matrix, book_df)
 
-        recommendations.to_parquet('data/top_k_recommendations_nonparallel.parquet')
+        recommendations.to_parquet(f'output/top_k_recommendations_nonparallel_{current_time}.parquet')
 
         print('======= Done =======')
         return
