@@ -12,7 +12,7 @@ import csv
 import warnings
 warnings.filterwarnings('ignore')
 
-SAMPLE_SIZE = 1000
+SAMPLE_SIZE = 10
 
 current_time = time.strftime("%Y%m%d-%H%M%S")
 file_handler = open(f'output/function_timings_nonparallel_{SAMPLE_SIZE}.txt', 'a')
@@ -26,7 +26,7 @@ def timeit(func):
         end_time = time.perf_counter()
         total_time = end_time - start_time
         
-        file_handler.write(f'Function {func.__name__} {kwargs["name"] if len(kwargs)>0 else " "}took {total_time:.4f} seconds\n')
+        file_handler.write(f'Function {func.__name__} {kwargs["name"] + " " if len(kwargs)>0 else ""}took {total_time:.4f} seconds\n')
         
         return result
     return timeit_wrapper
@@ -46,7 +46,7 @@ class RecommendationSystem():
         book_df = pd.read_parquet('data/book_eng.parquet')
         book_df_cleaned = book_df.dropna(subset = ['Description'])
         book_df_cleaned.reset_index(drop = True, inplace = True)
-        sample_book_cleaned = book_df_cleaned.sample(1000, random_state=42) #delete
+        sample_book_cleaned = book_df_cleaned.sample(SAMPLE_SIZE, random_state=42) #delete
 
         user_rating_df = pd.read_parquet('data/user_rating_total.parquet')
         user_rating_df_cleaned = user_rating_df.drop_duplicates()

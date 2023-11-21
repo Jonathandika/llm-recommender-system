@@ -32,7 +32,7 @@ def timeit(func):
         end_time = time.perf_counter()
         total_time = end_time - start_time
         
-        file_handler.write(f'Function {func.__name__} {kwargs["name"] if len(kwargs)>0 else ""}took {total_time:.4f} seconds\n')
+        file_handler.write(f'Function {func.__name__} {kwargs["name"] + " " if len(kwargs)>0 else ""}took {total_time:.4f} seconds\n')
         
         return result
     return timeit_wrapper
