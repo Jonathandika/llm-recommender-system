@@ -17,7 +17,7 @@ import concurrent.futures
 import warnings
 warnings.filterwarnings('ignore')
 
-SAMPLE_SIZE = 1000
+SAMPLE_SIZE = 10000
 N_PARTITIONS = 8
 
 current_time = time.strftime("%Y%m%d-%H%M%S")
@@ -32,7 +32,7 @@ def timeit(func):
         end_time = time.perf_counter()
         total_time = end_time - start_time
         
-        file_handler.write(f'Function {func.__name__} {kwargs["name"] if len(kwargs)>0 else " "}took {total_time:.4f} seconds\n')
+        file_handler.write(f'Function {func.__name__} {kwargs["name"] if len(kwargs)>0 else ""}took {total_time:.4f} seconds\n')
         
         return result
     return timeit_wrapper
@@ -130,6 +130,14 @@ class RecommendationSystem():
 
         return top_books_complete.compute()
 
+    @timeit
+    def predict(self, user_item_matrix, final_similarity_matrix):
+        final_similarity_matrix.columns = final_similarity_matrix.columns.astype('str')
+        final_similarity_matrix.index = final_similarity_matrix.index.astype('str')
+        pr = PredictRating()
+        filled_matrix = pr.fill_user_item_matrix_parallel(user_item_matrix, final_similarity_matrix, num_processes=N_PARTITIONS)
+        return filled_matrix
+
 
     @timeit
     def generate_recommendations(self):
@@ -160,15 +168,11 @@ class RecommendationSystem():
         
         # 5. Generate User Item Matrix (Ratings)
         print('======= Generating user-item matrix =======')
-        
         user_item_matrix = self.generate_user_item_matrix(final_similarity_matrix, user_rating_df)
 
         #6. Generate Recommendation Table -- Predict rating of unrated books
         print('======= Predicting =======')
-        final_similarity_matrix.columns = final_similarity_matrix.columns.astype('str')
-        final_similarity_matrix.index = final_similarity_matrix.index.astype('str')
-        pr = PredictRating()
-        filled_matrix = pr.fill_user_item_matrix_parallel(user_item_matrix, final_similarity_matrix, num_processes=4)
+        filled_matrix = self.predict(user_item_matrix, final_similarity_matrix)
        
         #7. Generate Top K Recommendations
         recommendations = self.get_top_k_recommendations(10, filled_matrix, book_df)
@@ -197,7 +201,6 @@ class RecommendationSystem():
         )
 
         batch_size = 100
-        texts = []
         metadatas = []
         data.insert(0, 'category', ['recommended']*data.shape[0])
 
@@ -214,7 +217,6 @@ class RecommendationSystem():
                 'description': record['description'],
                 **({'user_id': str(int(record['user_id']))} if record['category'] == 'recommended' else {})
             }
-            
             for _, record in batch.iterrows()]
             # get the list of contexts / documents
             documents = batch['description']
@@ -232,7 +234,7 @@ if __name__ == '__main__':
     config = dotenv_values(".env")
     rs = RecommendationSystem()
     data = rs.generate_recommendations()
-    # data = pd.read_parquet('data/top_k_recommendations_parallel.parquet')
+    # data = pd.read_parquet(f'output/top_k_recommendations_parallel_{SAMPLE_SIZE}.parquet')
     # rs.index_embedding_vectors(data)
     
 file_handler.close()

@@ -114,6 +114,12 @@ class RecommendationSystem():
             })
 
     @timeit
+    def predict(self, user_item_matrix, final_similarity_matrix):
+        pr = PredictRating()
+        filled_matrix = pr.fill_user_item_matrix_nonparallel(user_item_matrix, final_similarity_matrix)
+        return filled_matrix
+
+    @timeit
     def generate_recommendations(self):
         #1. Load data
         print('======= Loading Data =======')
@@ -146,9 +152,7 @@ class RecommendationSystem():
         
         #6. Generate Recommendation Table -- Predict rating of unrated books
         print('======= Predicting =======')
-
-        pr = PredictRating()
-        filled_matrix = pr.fill_user_item_matrix_nonparallel(user_item_matrix, final_similarity_matrix)
+        filled_matrix = self.predict(user_item_matrix, final_similarity_matrix)
 
         #7. Generate Top K Recommendations
         recommendations = self.get_top_k_recommendations(10, filled_matrix, book_df)
