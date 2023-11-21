@@ -9,8 +9,14 @@ from functools import wraps
 import time
 import csv
 
+import warnings
+warnings.filterwarnings('ignore')
+
+SAMPLE_SIZE = 1000
+
 current_time = time.strftime("%Y%m%d-%H%M%S")
-file_handler = open(f'output/function_timings_nonparallel_{current_time}.txt', 'w')
+file_handler = open(f'output/function_timings_nonparallel_{SAMPLE_SIZE}.txt', 'a')
+file_handler.write(f'============================================================\n')
 
 def timeit(func):
     @wraps(func)
@@ -20,7 +26,7 @@ def timeit(func):
         end_time = time.perf_counter()
         total_time = end_time - start_time
         
-        file_handler.write(f'Function {func.__name__}--{kwargs["name"] if len(kwargs)>0 else ""} Took {total_time:.4f} seconds\n')
+        file_handler.write(f'Function {func.__name__} {kwargs["name"] if len(kwargs)>0 else " "}took {total_time:.4f} seconds\n')
         
         return result
     return timeit_wrapper
@@ -30,7 +36,7 @@ class RecommendationSystem():
     def __init__(self):
         self.model = FlagModel('BAAI/bge-large-en-v1.5', 
                         query_instruction_for_retrieval="Represent this sentence for searching relevant passages: ",
-                        use_fp16=False)
+                        use_fp16=True)
 
     def embed_text(self, doc):
         return self.model.encode(doc)
@@ -147,7 +153,7 @@ class RecommendationSystem():
         #7. Generate Top K Recommendations
         recommendations = self.get_top_k_recommendations(10, filled_matrix, book_df)
 
-        recommendations.to_parquet(f'output/top_k_recommendations_nonparallel_{current_time}.parquet')
+        recommendations.to_parquet(f'output/top_k_recommendations_nonparallel_{SAMPLE_SIZE}.parquet')
 
         print('======= Done =======')
         return

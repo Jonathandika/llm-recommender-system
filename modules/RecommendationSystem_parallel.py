@@ -14,8 +14,15 @@ from tqdm import tqdm
 import concurrent
 import concurrent.futures
 
+import warnings
+warnings.filterwarnings('ignore')
+
+SAMPLE_SIZE = 1000
+N_PARTITIONS = 8
+
 current_time = time.strftime("%Y%m%d-%H%M%S")
-file_handler = open(f'output/function_timings_parallel_{current_time}.txt', 'w')
+file_handler = open(f'output/function_timings_parallel_{SAMPLE_SIZE}.txt', 'a')
+file_handler.write(f'============================================================\n')
 
 def timeit(func):
     @wraps(func)
@@ -25,7 +32,7 @@ def timeit(func):
         end_time = time.perf_counter()
         total_time = end_time - start_time
         
-        file_handler.write(f'Function {func.__name__}--{kwargs["name"] if len(kwargs)>0 else None} Took {total_time:.4f} seconds\n')
+        file_handler.write(f'Function {func.__name__} {kwargs["name"] if len(kwargs)>0 else " "}took {total_time:.4f} seconds\n')
         
         return result
     return timeit_wrapper
@@ -36,7 +43,7 @@ class RecommendationSystem():
     def __init__(self):
         self.model = FlagModel('BAAI/bge-large-en-v1.5', 
                         query_instruction_for_retrieval="Represent this sentence for searching relevant passages: ",
-                        use_fp16=False)
+                        use_fp16=True)
 
     def embed_text(self, doc):
         return self.model.encode(doc)
@@ -46,7 +53,7 @@ class RecommendationSystem():
         book_df = pd.read_parquet('data/book_eng.parquet')
         book_df_cleaned = book_df.dropna(subset = ['Description'])
         book_df_cleaned.reset_index(drop = True, inplace = True)
-        sample_book_cleaned = book_df_cleaned.sample(1000, random_state=42) #delete
+        sample_book_cleaned = book_df_cleaned.sample(SAMPLE_SIZE, random_state=42)
 
         user_rating_df = pd.read_parquet('data/user_rating_total.parquet')
         user_rating_df_cleaned = user_rating_df.drop_duplicates()
@@ -57,7 +64,7 @@ class RecommendationSystem():
 
     @timeit
     def generate_embeddings(self, df, **kwargs):
-        ddata = dd.from_pandas(df[['Id', 'Name', 'Description']], npartitions=8)
+        ddata = dd.from_pandas(df[['Id', 'Name', 'Description']], npartitions=N_PARTITIONS)
         ddata['EmbeddingsDesc'] = ddata['Description'].apply(self.embed_text, meta = ('Description', 'object'))
         ddata['EmbeddingsTitle'] = ddata['Name'].apply(self.embed_text, meta = ('Name', 'object'))
 
@@ -105,32 +112,23 @@ class RecommendationSystem():
     def get_top_k_recommendations(self, k, filled_matrix, book_df):
         print(f'======= Getting Top {k} Recommendations =======')
 
-        # Convert pandas DataFrames to Dask DataFrames
-        dask_filled_matrix = dd.from_pandas(filled_matrix, npartitions=8)
-        dask_book_df = dd.from_pandas(book_df, npartitions=8)
+        dask_filled_matrix = dd.from_pandas(filled_matrix, npartitions=N_PARTITIONS)
+        dask_book_df = dd.from_pandas(book_df, npartitions=N_PARTITIONS)
 
-        # Function to get the top books
-        def get_top_books(df):
-            return df.apply(lambda x: x.sort_values(ascending=False).head(k))
+        def get_top_books(row):
+            return row.sort_values(ascending=False).index.tolist()[:k]
+        
+        top_books = dask_filled_matrix.apply(get_top_books, axis=1, meta=('x', 'f8'))
+        top_books = top_books.to_frame().reset_index()
 
-        # Apply the function to each partition
-        top_books = dask_filled_matrix.map_partitions(get_top_books)
+        exploded_top_books = top_books.explode('x').reset_index(drop=True).rename(columns={'ID': 'user_id', 'x': 'book_id'})
+        exploded_top_books['book_id'] = exploded_top_books['book_id'].astype(int)
 
-        # Compute and format the result
-        long_format = top_books.compute().stack().reset_index()
-        long_format.columns = ['book_id', 'user_id', 'score']
+        top_books_complete = dd.merge(exploded_top_books, dask_book_df[['Id', 'Name', 'Description']], left_on='book_id', right_on='Id')
+        top_books_complete = top_books_complete[['user_id', 'book_id', 'Name', 'Description']]
+        top_books_complete.columns = ['user_id', 'book_id', 'book_title', 'description']
 
-        # Ensure the data types are consistent for merging
-        long_format['book_id'] = long_format['book_id'].astype(int)
-
-        # Merge with dask_book_df
-        merged_df = dd.merge(long_format, dask_book_df, left_on='book_id', right_on='Id')
-
-        # Compute the final result
-        final_df = merged_df.compute()[['user_id', 'book_id', 'Name', 'Description']]
-        final_df.columns = ['user_id', 'book_id', 'book_title', 'description']
-
-        return final_df
+        return top_books_complete.compute()
 
 
     @timeit
@@ -175,7 +173,7 @@ class RecommendationSystem():
         #7. Generate Top K Recommendations
         recommendations = self.get_top_k_recommendations(10, filled_matrix, book_df)
         
-        recommendations.to_parquet(f'output/top_k_recommendations_nonparallel_{current_time}.parquet')
+        recommendations.to_parquet(f'output/top_k_recommendations_parallel_{SAMPLE_SIZE}.parquet')
 
         print('======= Done =======')
         return recommendations
