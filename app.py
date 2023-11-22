@@ -2,7 +2,6 @@ import streamlit as st
 
 from modules.RetrievalAugmentedGenerator import RAG
 
-recommendation_agent = RAG()
 
 with st.sidebar:
     "## CS4480 Group Project"
@@ -12,10 +11,11 @@ with st.sidebar:
     "Seivabel Jessica"
     "Ryan Gani"
 
+    user_id = st.text_input("User ID", value="4614")
+
 st.title("💬 Chatbot")
 st.caption("🚀 LLM Recommender System Chatbot")
 
-import streamlit as st
 
 if "messages" not in st.session_state:
     st.session_state["messages"] = [{"role": "assistant", "content": "How can I help you?"}]
@@ -27,6 +27,8 @@ if prompt := st.chat_input():
 
     st.session_state.messages.append({"role": "user", "content": prompt})
     st.chat_message("user").write(prompt)
+
+    recommendation_agent = RAG(user_id=user_id)
 
     response = recommendation_agent.agent(prompt)
     print("REPONSE ===>", response)
