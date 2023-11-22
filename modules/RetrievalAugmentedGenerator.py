@@ -18,6 +18,8 @@ from langchain.agents import initialize_agent
 from modules.helper.PineconeModified import PineconeModified
 from modules.helper.PineconeSelfQueryRetriever import PineconeSelfQueryRetriever
 
+from FlagEmbedding import FlagModel
+
 import os
 
 class RAG:
@@ -51,8 +53,6 @@ class RAG:
     def __load_environment_variables(self):
         PINECONE_API = os.getenv("PINECONE_API")
         PINECONE_ENV = os.getenv("PINECONE_ENV")
-        print(PINECONE_API)
-        print(PINECONE_ENV)
 
         return {
             "PINECONE_API": PINECONE_API,
@@ -60,9 +60,10 @@ class RAG:
         }
 
     def __initialize_embedding_model(self):
-        embed = OpenAIEmbeddings(
-            model=self.model_name
-        )
+        model = FlagModel('BAAI/bge-large-en-v1.5', 
+                query_instruction_for_retrieval="Represent this sentence for searching relevant passages: ",
+                use_fp16=True)
+        embed = lambda x: model.encode(x).tolist()     
         return embed
 
     def __initialize_vector_database(self):
@@ -77,7 +78,7 @@ class RAG:
     def __initialize_vectorstore(self):
         text_field = "description"
         vectorstore = PineconeModified(
-            self.index, self.embed.embed_query, text_field
+            self.index, self.embed, text_field
         )
         return vectorstore
     
@@ -124,7 +125,7 @@ class RAG:
         ## 3. Specific Recommendation
         pineconeRetreiver = self.vectorstore.as_retriever(
                 search_kwargs={'k' : 5, 
-                            'filter': {'user_id' : '1', 'category': 'recommended'}})
+                            'filter': {'user_id' : self.user_id, 'category': 'recommended'}})
 
         recommended_qa = pineconeRetreiver | format_docs_title
 
