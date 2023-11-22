@@ -223,7 +223,7 @@ class RecommendationSystem():
             # create document embeddings
             embeds = embed.embed_documents(documents)
             # get IDs
-            ids = batch['book_id'].astype(str)
+            ids = batch.index.astype(str)
             # add everything to pinecone
             index.upsert(vectors=zip(ids, embeds, metadatas))
         
@@ -232,9 +232,20 @@ class RecommendationSystem():
 
 if __name__ == '__main__':
     config = dotenv_values(".env")
+
     rs = RecommendationSystem()
-    data = rs.generate_recommendations()
+
+    # data = rs.generate_recommendations()
+
+
+    # Indexing Result to Pinecone
+    # =========================================
     # data = pd.read_parquet(f'output/top_k_recommendations_parallel_{SAMPLE_SIZE}.parquet')
-    # rs.index_embedding_vectors(data)
+    # selected_user_ids = data['user_id'].unique()[:20]
+    # data_sample = data[data['user_id'].isin(selected_user_ids)]
+    # data_sample.sort_values(by='user_id', inplace=True)
+    # data_sample.reset_index(drop=True, inplace=True)
+
+    # rs.index_embedding_vectors(data_sample)
     
 file_handler.close()
