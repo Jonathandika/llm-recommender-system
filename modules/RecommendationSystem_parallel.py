@@ -55,10 +55,11 @@ class RecommendationSystem():
         book_df_cleaned.reset_index(drop = True, inplace = True)
         sample_book_cleaned = book_df_cleaned.sample(SAMPLE_SIZE, random_state=42)
 
-        user_rating_df = pd.read_parquet('data/user_rating_total.parquet')
-        user_rating_df_cleaned = user_rating_df.drop_duplicates()
+        user_rating_df = pd.read_parquet('data/user_rating_cleaned.parquet')
+        user_rating_df_cleaned = user_rating_df.drop_duplicates(subset = 'Name', keep = 'first')
         user_rating_df_cleaned.dropna(inplace=True)
         user_rating_df_cleaned.reset_index(drop = True, inplace = True)
+        user_rating_df_cleaned = user_rating_df_cleaned[user_rating_df_cleaned['book_id'].isin(book_df_cleaned['Id'].tolist())]
         
         return sample_book_cleaned, user_rating_df_cleaned
 
@@ -147,7 +148,6 @@ class RecommendationSystem():
 
         #2. Generate embeddings -- Description
         print('======= Generating Embeddings =======')
-        print('======= Description =======')
 
         embeddings_desc_df, embeddings_title_df = self.generate_embeddings(book_df)
 
@@ -215,6 +215,7 @@ class RecommendationSystem():
                 'category': record['category'],
                 'title': record['book_title'],
                 'description': record['description'],
+                'book_id' : record['book_id'],
                 **({'user_id': str(int(record['user_id']))} if record['category'] == 'recommended' else {})
             }
             for _, record in batch.iterrows()]
@@ -234,18 +235,16 @@ if __name__ == '__main__':
     config = dotenv_values(".env")
 
     rs = RecommendationSystem()
-
     # data = rs.generate_recommendations()
-
 
     # Indexing Result to Pinecone
     # =========================================
-    # data = pd.read_parquet(f'output/top_k_recommendations_parallel_{SAMPLE_SIZE}.parquet')
-    # selected_user_ids = data['user_id'].unique()[:20]
-    # data_sample = data[data['user_id'].isin(selected_user_ids)]
-    # data_sample.sort_values(by='user_id', inplace=True)
-    # data_sample.reset_index(drop=True, inplace=True)
+    data = pd.read_parquet(f'output/top_k_recommendations_parallel_{SAMPLE_SIZE}.parquet')
+    selected_user_ids = data['user_id'].unique()[:20]
+    data_sample = data[data['user_id'].isin(selected_user_ids)]
+    data_sample.sort_values(by='user_id', inplace=True)
+    data_sample.reset_index(drop=True, inplace=True)
 
-    # rs.index_embedding_vectors(data_sample)
+    rs.index_embedding_vectors(data_sample)
     
 file_handler.close()
