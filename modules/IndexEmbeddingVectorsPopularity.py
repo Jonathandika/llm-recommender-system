@@ -24,7 +24,6 @@ def index_embedding_vectors(data):
     )
 
     batch_size = 100
-    texts = []
     metadatas = []
 
     data.columns = ['book_id', 'book_title', 'description']
@@ -60,5 +59,6 @@ config = dotenv_values(".env")
 book_df = pd.read_parquet('data/book_eng.parquet')
 book_df_cleaned = book_df.dropna(subset = ['Description'])
 book_df_cleaned.reset_index(drop = True, inplace = True)
-top_1000_books = book_df_cleaned.sort_values('RatingDistTotal', ascending = False)[:1000]
-index_embedding_vectors(top_1000_books[['Id', 'Name', 'Description']])
+book_df_cleaned.RatingDistTotal = book_df_cleaned.RatingDistTotal.str.replace('total:', '').astype(int)
+top_10_books = book_df_cleaned.sort_values('RatingDistTotal', ascending = False)[:1000]
+index_embedding_vectors(top_10_books[['Id', 'Name', 'Description']])
