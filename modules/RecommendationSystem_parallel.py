@@ -56,7 +56,7 @@ class RecommendationSystem():
         sample_book_cleaned = book_df_cleaned.sample(SAMPLE_SIZE, random_state=42)
 
         user_rating_df = pd.read_parquet('data/user_rating_cleaned.parquet')
-        user_rating_df_cleaned = user_rating_df.drop_duplicates(subset = 'Name', keep = 'first')
+        user_rating_df_cleaned = user_rating_df.drop_duplicates(subset = ['ID','Name'], keep = 'first')
         user_rating_df_cleaned.dropna(inplace=True)
         user_rating_df_cleaned.reset_index(drop = True, inplace = True)
         user_rating_df_cleaned = user_rating_df_cleaned[user_rating_df_cleaned['book_id'].isin(book_df_cleaned['Id'].tolist())]
