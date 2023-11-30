@@ -1,4 +1,5 @@
 import random
+from dotenv import dotenv_values
 import argparse
 import numpy as np
 from collections import deque
@@ -15,7 +16,8 @@ import heapq
 from tqdm import tqdm
 import tensorflow as tf
 
-from helper.DQNAgent import DQNAgent
+from modules.helper.DQNAgent import DQNAgent
+from modules.IndexEmbeddingVectors_RL import IndexEmbeddingVectors
 
 parser = argparse.ArgumentParser()
 
@@ -37,12 +39,16 @@ class RecommendationSystemRL:
     This class contains all the functions for the Recommendation System.
     """
 
-    train_data = 'data/RL/traindata.csv'
-    states = 'data/RL/TFIDF-States.csv'
+    # train_data = 'data/RL/traindata.csv'
+    # states = 'data/RL/TFIDF-States.csv'
+    # books = 'data/RL/booksamples.csv'
+
+    states = 'data/RL/TFIDF-states.csv'
     books = 'data/RL/booksamples.csv'
 
+
     def __init__(self, retrain=False):
-        self.train_data, self.states, self.books, self.user_ids, self.book_names = self._load_data(self.train_data, self.states, self.books)
+        self.states, self.books, self.user_ids, self.book_names = self._load_data(self.states, self.books)
         self.Encoded, self.Original_States = self._process_combination(self.states, self.book_names, optim.State_Size)
         self.batch_size = optim.batch
         self.state_size = len(self.Encoded[0])
@@ -50,24 +56,32 @@ class RecommendationSystemRL:
 
         if not retrain:
             self.agent = DQNAgent(self.state_size, self.action_size, retrain=False)
+
+            #CHANGE TO YOUR PATH
             self.rec_initial_full = pd.read_csv('output/RL/rec_initial.csv')
+            self.train_data = pd.read_csv('data/RL/traindata.csv')
             
         else:
             self.agent = DQNAgent(self.state_size, self.action_size, retrain=True)            
             self.rec_initial_full = None
 
+            #CHANGE TO YOUR PATH
+            self.train_data = pd.read_csv('data/RL/traindata.csv')
+
         self.Index = []
 
 
-    def _load_data(self, train_data, states, books):
-        train_data_df = pd.read_csv(train_data)
+    def _load_data(self, states, books):
+
+        #CHANGE TO YOUR PATH
+        train_data_df = pd.read_csv('data/RL/traindata.csv')
         states_df = pd.read_csv(states)
         books_df = pd.read_csv(books)
 
         user_ids = train_data_df['user_encoded'].to_list()
         book_names = books_df['Name']
 
-        return train_data_df, states_df, books_df, user_ids, book_names
+        return states_df, books_df, user_ids, book_names
     
     def _process_combination(self, States, book_names, state_size = 2):
         """
@@ -142,8 +156,8 @@ class RecommendationSystemRL:
         model: Returns the Target Model.
 
         """
-        model.save('tmp_model')
-        target_model = keras.models.load_model('tmp_model')
+        model.save('output/RL/tmp_model')
+        target_model = keras.models.load_model('output/RL/tmp_model')
         return target_model
     
     def _add_history(self, data):
@@ -217,8 +231,29 @@ class RecommendationSystemRL:
 
         return df_merged
 
+    def reshape_recommendations(self, df):
+        recommended_book_titles = []        
+        recommended_book_ids = []
+        user_ids = []
+        user_ids_encoded = []
+                
+        for _, row in df.iterrows():
+            user_ids.extend([row['ID']]*5)
+            user_ids_encoded.extend([row['user_encoded']]*5)
+            recommended_book_titles.extend(row.loc['rec_1':'rec_5'].values.tolist())
+            recommended_book_ids.extend(row.loc['recid_1':'recid_5'].values.tolist())
 
-    
+        df_new = pd.DataFrame({
+                'user_id': user_ids,
+                'user_encoded': user_ids_encoded,
+                'book_title': recommended_book_titles,
+                'book_id': recommended_book_ids
+        })
+
+        book_df = self.books.rename(columns={'Id': 'book_id', 'Description': 'description'})
+        df_final = pd.merge(df_new, book_df, how='left', left_on = 'book_id', right_on = 'book_id')[['user_id', 'user_encoded', 'book_title', 'book_id', 'description']]
+        return df_final
+
     def get_recommended_items(self):
         model_type = self.agent.model
 
@@ -277,7 +312,8 @@ class RecommendationSystemRL:
         recommended_final_clean.drop_duplicates(inplace= True)
         recommended_final_clean = self._add_book_ids(recommended_final_clean, books_idname)
         return recommended_final, recommended_final_clean
-    
+
+
     def get_recommended_items2(self, userid, book_accepted):
 
         model_type = self.agent.model
@@ -357,6 +393,7 @@ class RecommendationSystemRL:
                     print(S)
 
                     # reading user csv
+                    # CHANGE TO YOUR PATH
                     x = (user_ids[i]).__str__()
                     user = pd.read_csv('data/RL/user_' + x + '.csv')
                     done = False
@@ -432,11 +469,15 @@ class RecommendationSystemRL:
 
         self.rec_initial_full = rec_initial_full
 
-        return rec_initial
+        #creating new train data csv to be used for the next recommendations
+        self.train_data.to_csv('data/RL/traindata.csv')
+        rec_initial_reshaped = self.reshape_recommendations(rec_initial)
+        return rec_initial_reshaped
     
     def get_new_recommendation(self, userid, book_accepted):
         print("=============================================================================")
         print("For User", userid)
+      
         for j in range(len(self.train_data['user_encoded'])):
             if  userid == self.train_data['user_encoded'][j]:
 
@@ -518,20 +559,34 @@ class RecommendationSystemRL:
                         break
                     e=e+1
                 break
+
         newrecfull, newrec = self.get_recommended_items2(userid, book_accepted)
 
         self.rec_initial_full = newrecfull
 
-        return newrec
-    
-    
+        ori_id = self.train_data.loc[self.train_data['user_encoded'] == userid, 'ID'].values[0]
+        new_row = {'ID': ori_id, 'Name': new_book, 'book_id': book_accepted, 'Rating': 0, 'user_encoded': userid}
+        self.train_data = pd.concat([pd.DataFrame(new_row, index=[0]), self.train_data], ignore_index=True)
+        self.train_data.drop('Unnamed: 0.1',axis=1,inplace=True)
+        self.train_data.to_csv('data/RL/traindata.csv')
 
+        # newrec.to_csv('aaaa_newrec.csv')
+
+        newrec_reshaped = self.reshape_recommendations(newrec)
+        return newrec_reshaped
+    
 if __name__ == "__main__":
-    # rs = RecommendationSystemRL(retrain=True)
-    # rec_init = rs.get_initial_recommendation()
-    # rec_init.to_csv('output/RL/rec_initial.csv', index=False)
+    # config = dotenv_values(".env")
+    rs = RecommendationSystemRL(retrain=True)
+    rec_init = rs.get_initial_recommendation()
+    rec_init.to_csv('output/RL/rec_initial.csv', index=False)
+    # rec_init = pd.read_csv('output/RL/rec_initial.csv')
+    i = IndexEmbeddingVectors()
+    i.index_embedding_vectors(rec_init, 'recommended')
 
-    # New Rec
-    rs = RecommendationSystemRL(retrain=False)
-    rec_new = rs.get_new_recommendation(1, 1076302)
-    rec_new.to_csv('output/RL/rec_new.csv', index=False)
+
+    # # New Rec
+    # rs = RecommendationSystemRL(retrain=False)
+    # rec_new = rs.get_new_recommendation(1, 1076302)
+    # rec_new.to_csv('output/RL/rec_new.csv', index=False)
+    pass

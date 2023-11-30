@@ -1,7 +1,6 @@
 from dotenv import dotenv_values
-
 import pinecone
-
+import pandas as pd
 from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.chat_models import ChatOpenAI
 from langchain.chains.query_constructor.base import AttributeInfo
@@ -13,7 +12,7 @@ from langchain.schema.runnable import RunnablePassthrough
 from langchain.prompts import PromptTemplate
 from langchain.schema.runnable import RunnableBranch
 from langchain.agents import Tool
-from langchain.agents import initialize_agent
+from langchain.agents import (initialize_agent, AgentType)
 
 from langchain.output_parsers import CommaSeparatedListOutputParser
 
@@ -22,20 +21,23 @@ from modules.helper.PineconeSelfQueryRetriever import PineconeSelfQueryRetriever
 
 from FlagEmbedding import FlagModel
 
-from RL_class import RecommendationSystemRL
+from modules.RecommendationSystem_RL import RecommendationSystemRL
+from modules.IndexEmbeddingVectors_RL import IndexEmbeddingVectors
+
+import pickle
 
 import os
 
-class RAG:
+class RAG_RL:
     LLM_MODEL_NAME = 'gpt-4-1106-preview'
-    PINECONE_INDEX_NAME = 'llm-recommender-system'
-    USER_ID = '1'
+    PINECONE_INDEX_NAME = 'rl-llm-recsys'
+    USER_ID = 185
 
     def __init__(self,
-                RecommendationSystem: RecommendationSystemRL,
+                recommendation_system: RecommendationSystemRL,
                 llm_model_name:str = LLM_MODEL_NAME,
                 pinecone_index_name:str = PINECONE_INDEX_NAME,
-                user_id:str = USER_ID,
+                user_id:int = USER_ID,
                 ):
         
         self.llm_model_name = llm_model_name
@@ -53,7 +55,13 @@ class RAG:
         self.tools = self.__initialize_tools()
         self.agent = self.create_agent()
 
-        self.recomm
+        self.recommendation_system = recommendation_system
+        self.index_embedding_vectors = IndexEmbeddingVectors()
+        
+        if 'book_ids.pkl' in os.listdir('output/RL/'):
+            with open('output/RL/book_ids.pkl', 'rb') as f:
+                self.book_ids = pickle.load(f)
+
 
     def __load_environment_variables(self):
         PINECONE_API = os.getenv("PINECONE_API")
@@ -108,11 +116,12 @@ class RAG:
             return "\n\n".join([d.page_content for d in docs])
         
         def format_docs_title(docs):
-            return "\n\n".join([f"{i+1}. {d.metadata['title']} : {d.page_content}" for i,d in enumerate(docs)])
+            return "\n\n".join([f"{i+1}. {d.metadata['book_title']} : {d.page_content}" for i,d in enumerate(docs)])
         
         def format_docs_title_source(docs):
             res = {
-                'result' : "\n\n".join([f"{i+1}. {d.metadata['title']} : {d.page_content}" for i,d in enumerate(docs)]),
+                'category' : 'specific',
+                'result' : "\n\n".join([f"{i+1}. {d.metadata['book_title']}" for i,d in enumerate(docs)]),
                 'source_documents' : [d.metadata['book_id'] for d in docs]
             }
             return str(res)
@@ -185,11 +194,24 @@ class RAG:
         ## 4. Feedback loop
         output_parser = CommaSeparatedListOutputParser()
 
-        def update_env(book_ids: list):
+        def update_env(chosen_books: list):
+            # Map book_id
+            
+            book_index = int(chosen_books[0]) - 1
+            book_accepted_id = self.book_ids[book_index] 
+
+            print(f"book_accepted_id: {book_accepted_id}")
             # print book_ids to a file
-            newrec = RecommendationSystemRL.get_new_recommendation(self.user_id, book_ids[0])
-            newrec = 
-            upsert new recomenndation ke vector db
+            rec_init = pd.read_csv('output/RL/rec_initial.csv')
+            user_id_encoded = rec_init[rec_init['user_id']==self.user_id].user_encoded.unique()[0]
+            newrec = self.recommendation_system.get_new_recommendation(user_id_encoded, book_accepted_id)
+            newrec.dropna(inplace=True)
+
+            # newrec.to_csv('output/RL/rec_new.csv', index=False)
+
+            self.index_embedding_vectors.delete_vectors(self.user_id)
+            self.index_embedding_vectors.index_embedding_vectors(newrec, 'recommended')
+            return
 
         def feedback(message):
             def parse_feedback(message):
@@ -212,10 +234,17 @@ class RAG:
 
             # hrsnya ada thread yg ngeupdate env
             book_ids = parse_feedback(message)
+            print(f'Book_ids: {book_ids}')
             update_env(book_ids)
 
             ai_message = self.llm.invoke(message)
-            return ai_message.content
+            
+            res = {
+                'category' : 'general',
+                'result' : ai_message.content
+            }
+
+            return str(res)
         
         tools = [
             Tool(
@@ -234,15 +263,15 @@ class RAG:
                 ),
                 return_direct = True
             ),
-            Tool(
-                name='Popular Recommendation',
-                func=popular_qa.invoke,
-                description=(
-                    'use this tool when the user asking for popular book recommendation without any specific preference'
+            # Tool(
+            #     name='Popular Recommendation',
+            #     func=popular_qa.invoke,
+            #     description=(
+            #         'use this tool when the user asking for popular book recommendation without any specific preference'
 
-                ),
-                return_direct = True
-            ),
+            #     ),
+            #     return_direct = True
+            # ),
             Tool(
                 name='Generic Prompt',
                 func=feedback,
@@ -258,20 +287,29 @@ class RAG:
 
     def create_agent(self):
         agent = initialize_agent(
-            tools=self.tools,
-            llm=self.llm,
-            verbose=True,
-            memory=self.conversational_memory,
-            return_source_documents=True
+                agent=AgentType.CHAT_ZERO_SHOT_REACT_DESCRIPTION,
+                tools=self.tools,
+                llm=self.llm,
+                verbose=True,
+                memory=self.conversational_memory,
+                return_source_documents=True
         )
         return agent
 
     def agent_invoke(self, message):
         res = self.agent.invoke(message)
         output = eval(res['output'])
-        user_output = "Here are some book recommendations for you: \n" + output['result'] + "\n\n Which one do you want to read first?"
-        book_ids = output['source_documents']
-        return user_output, book_ids
+        print(output)
+        if output['category'] == 'specific':
+            user_output = "Here are some book recommendations for you: \n" + output['result'] + "\n\n Which one do you want to read first?"
+            self.book_ids = output['source_documents']
+            
+            with open('output/RL/book_ids.pkl', 'wb') as f:
+                pickle.dump(self.book_ids, f)
+
+            return user_output
+        else:
+            return output['result']
 
     def run(self):
         # Main loop to run the agent
@@ -281,5 +319,8 @@ class RAG:
 
 # Main Execution
 if __name__ == "__main__":
-    recommendation_agent = RAG()
+    config = dotenv_values(".env")
+
+    rs = RecommendationSystemRL(retrain=False)
+    recommendation_agent = RAG_RL(rs)
     recommendation_agent.run()

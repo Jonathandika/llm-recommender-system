@@ -55,7 +55,7 @@ class DQNAgent:
         if retrain == True:
             self.model = self._build_model()
         else:
-            self.model = keras.models.load_model('tmp_model')
+            self.model = keras.models.load_model('output/RL/tmp_model')
 
     # Function to build a model
     def _build_model(self):
