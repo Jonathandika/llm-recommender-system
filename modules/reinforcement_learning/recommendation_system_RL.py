@@ -17,7 +17,7 @@ from tqdm import tqdm
 import tensorflow as tf
 
 from modules.helper.DQNAgent import DQNAgent
-from modules.IndexEmbeddingVectors_RL import IndexEmbeddingVectors
+from modules.helper.IndexingVectorEmbeddings import IndexingVectorEmbeddings
 
 parser = argparse.ArgumentParser()
 
@@ -576,12 +576,13 @@ class RecommendationSystemRL:
         return newrec_reshaped
     
 if __name__ == "__main__":
-    # config = dotenv_values(".env")
+
     rs = RecommendationSystemRL(retrain=True)
     rec_init = rs.get_initial_recommendation()
     rec_init.to_csv('output/RL/rec_initial.csv', index=False)
+
     # rec_init = pd.read_csv('output/RL/rec_initial.csv')
-    i = IndexEmbeddingVectors()
+    i = IndexingVectorEmbeddings()
     i.index_embedding_vectors(rec_init, 'recommended')
 
 

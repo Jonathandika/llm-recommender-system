@@ -1,6 +1,6 @@
 import streamlit as st
 
-from modules.RetrievalAugmentedGenerator import RAG
+from modules.RAG import RAG
 
 
 with st.sidebar:

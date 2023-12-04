@@ -5,7 +5,7 @@ import pinecone
 from langchain.embeddings import HuggingFaceEmbeddings
 from tqdm import tqdm
 
-class IndexEmbeddingVectors:
+class IndexingVectorEmbeddings:
     def __init__(self):
         self.config = dotenv_values(".env")
         pass
@@ -103,5 +103,5 @@ if __name__ == '__main__':
     top_100_books = book_df_cleaned.sort_values('RatingDistTotal', ascending = False)[:100]
     final_top_100_books = top_100_books[['Id', 'Name', 'Description']]
     final_top_100_books = final_top_100_books.rename(columns = {'Id': 'book_id', 'Name': 'book_title', 'Description':'description'})
-    i = IndexEmbeddingVectors()
+    i = IndexingVectorEmbeddings()
     i.index_embedding_vectors(final_top_100_books, 'popular')
